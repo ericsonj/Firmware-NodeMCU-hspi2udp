@@ -32,7 +32,7 @@ uint8_t txDateLenCount;
 int rxDateLenCount;
 
 // WiFi Connection info
-const char *ssid = "WA901ND"; 
+const char *ssid = "WA901ND";
 const char *pw = "4QR6X6V5B5";
 
 IPAddress ip(192, 168, 88, 70);
@@ -43,6 +43,7 @@ const int localPort = 19000;
 // WiFi Server info
 WiFiUDP udp;
 IPAddress serverIp(192, 168, 88, 64);
+//IPAddress serverIp(207, 246, 65, 130); //ericsonj.net
 
 void setup() {
 
@@ -155,7 +156,5 @@ void loop() {
     }
 
   }
-  
 
 }
-
