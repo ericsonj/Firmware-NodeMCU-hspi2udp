@@ -2,12 +2,21 @@
 #include<ESP8266WiFi.h>
 #include <WiFiUdp.h>
 
+// Network
+#define HOTSPOT_NET
+// #define LOCAL_NET
+
+// Server
+// #define LOCAL_SERVER
+// #define REMOTE_SERVER
+#define HOTSPOT_SERVER
+
 typedef enum {
-    WAIT_DATA,
-    WAIT_TYPE,
-    WAIT_LEN,
-    READ_BYTES,
-    TRANSMIT
+  WAIT_DATA,
+  WAIT_TYPE,
+  WAIT_LEN,
+  READ_BYTES,
+  TRANSMIT
 } txState_t;
 
 typedef enum {
@@ -31,24 +40,50 @@ uint8_t txDateLen;
 uint8_t txDateLenCount;
 int rxDateLenCount;
 
-// WiFi Connection info
-const char *ssid = "WA901ND";
-const char *pw = "4QR6X6V5B5";
+//WiFi Connection info
+#ifdef LOCAL_NET
+  const char *ssid = "WA901ND";
+  const char *pw = "4QR6X6V5B5";
+#endif
 
-IPAddress ip(192, 168, 88, 70);
-IPAddress gateway(192, 168, 88, 1);
-IPAddress netmask(255, 255, 255, 0);
+#ifdef HOTSPOT_NET
+  const char *ssid = "quicksilver";
+  const char *pw = "F1234F1234";
+#endif
+
+#ifdef LOCAL_NET
+  IPAddress ip(192, 168, 88, 70);
+  IPAddress gateway(192, 168, 88, 1);
+  IPAddress netmask(255, 255, 255, 0);
+#endif
+
+#ifdef HOTSPOT_NET
+  IPAddress ip(10, 42, 0, 55);
+  IPAddress gateway(10, 42, 0, 1);
+  IPAddress netmask(255, 255, 255, 0);
+#endif
+
 const int localPort = 19000;
 
 // WiFi Server info
 WiFiUDP udp;
-IPAddress serverIp(192, 168, 88, 64);
-//IPAddress serverIp(207, 246, 65, 130); //ericsonj.net
+
+#ifdef LOCAL_SERVER
+  IPAddress serverIp(192, 168, 88, 64);
+#endif
+
+#ifdef HOTSPOT_SERVER
+  IPAddress serverIp(10, 42, 0, 1);
+#endif
+
+#ifdef REMOTE_SERVER
+  IPAddress serverIp(207, 246, 65, 130); //ericsonj.net
+#endif
 
 void setup() {
 
   Serial.begin(115200);
-  
+
   SPI.begin();
   SPI.setHwCs(true);
   SPI.setClockDivider(SPI_CLOCK_DIV4);
@@ -61,13 +96,13 @@ void setup() {
     delay(500);
   }
 
-  
+
   txDateLen = 0;
   txDateLenCount = 0;
   bufferRxIdx = 0;
   bufferTxIdx = 0;
   bufferRxUDPIdx = 0;
-  
+
   udp.begin(localPort);
 
   Serial.println("");
@@ -77,82 +112,82 @@ void setup() {
 }
 
 void loop() {
-  
+
   int packetSize;
   memset(bufferTx, 0, 64);
-  
+
   switch (rxState) {
-  case RX_WAIT_DATA:
-    packetSize = udp.parsePacket();
-    if(packetSize > 0){
+    case RX_WAIT_DATA:
+      packetSize = udp.parsePacket();
+      if (packetSize > 0) {
+        bufferRxIdx = 0;
+        bufferRxUDPIdx = 0;
+        rxDateLenCount = packetSize;
+        udp.read(bufferRxUDP, packetSize);
+        bufferTx[bufferRxIdx++] = 0x84;
+        bufferTx[bufferRxIdx++] = 0x00;
+        bufferTx[bufferRxIdx++] = (uint8_t)packetSize;
+        while (bufferRxIdx < 64 && rxDateLenCount > 0) {
+          bufferTx[bufferRxIdx++] = bufferRxUDP[bufferRxUDPIdx];
+          bufferRxUDPIdx++;
+          rxDateLenCount--;
+        }
+        rxState = RX_TRANSMIT;
+      }
+      break;
+    case RX_TRANSMIT:
       bufferRxIdx = 0;
-      bufferRxUDPIdx = 0;
-      rxDateLenCount = packetSize;
-      udp.read(bufferRxUDP, packetSize);
-      bufferTx[bufferRxIdx++] = 0x84;
-      bufferTx[bufferRxIdx++] = 0x00;
-      bufferTx[bufferRxIdx++] = (uint8_t)packetSize;
-      while(bufferRxIdx < 64 && rxDateLenCount > 0){
+      while (bufferRxIdx < 64 && rxDateLenCount > 0) {
         bufferTx[bufferRxIdx++] = bufferRxUDP[bufferRxUDPIdx];
         bufferRxUDPIdx++;
         rxDateLenCount--;
       }
-      rxState = RX_TRANSMIT;
-    }
-    break;
-  case RX_TRANSMIT:
-    bufferRxIdx = 0;
-    while(bufferRxIdx < 64 && rxDateLenCount > 0){
-      bufferTx[bufferRxIdx++] = bufferRxUDP[bufferRxUDPIdx];
-      bufferRxUDPIdx++;
-      rxDateLenCount--;
-    }
-    if(rxDateLenCount <= 0){
-      rxState = RX_WAIT_DATA;
-    }
-    break;
+      if (rxDateLenCount <= 0) {
+        rxState = RX_WAIT_DATA;
+      }
+      break;
   }
 
   SPI.transferBytes(bufferTx, bufferRx, 64);
 
   for (int i = 0; i < 64; i++) {
     switch (txState) {
-    case WAIT_DATA:
-      if(bufferRx[i] == 0x84){
-        txState = WAIT_TYPE;
-      }
-      break;
-    case WAIT_TYPE:
-      if(bufferRx[i] == 0x00){
-        txState = WAIT_LEN;
-      }else{
+      case WAIT_DATA:
+        if (bufferRx[i] == 0x84) {
+          txState = WAIT_TYPE;
+        }
+        break;
+      case WAIT_TYPE:
+        if (bufferRx[i] == 0x00) {
+          txState = WAIT_LEN;
+        } else {
+          txState = WAIT_DATA;
+        }
+        break;
+      case WAIT_LEN:
+        txDateLenCount = bufferRx[i];
+        txDateLen = txDateLenCount;
+        if (txDateLenCount == 0) {
+          txState = WAIT_DATA;
+        } else {
+          bufferTxIdx = 0;
+          txState = READ_BYTES;
+        }
+        break;
+      case READ_BYTES:
+        bufferTxUDP[bufferTxIdx] = bufferRx[i];
+        bufferTxIdx++;
+        txDateLenCount--;
+        if (txDateLenCount == 0) {
+          txState = TRANSMIT;
+        }
+        break;
+      case TRANSMIT:
+        udp.beginPacket(serverIp, localPort);
+        udp.write(bufferTxUDP, txDateLen);
+        udp.endPacket();
         txState = WAIT_DATA;
-      }
-      break;
-    case WAIT_LEN:
-      txDateLenCount = bufferRx[i];
-      txDateLen = txDateLenCount;
-      if(txDateLenCount == 0){
-        txState = WAIT_DATA;
-      }else{
-        bufferTxIdx = 0;
-        txState = READ_BYTES;
-      }
-      break;
-    case READ_BYTES:
-      bufferTxUDP[bufferTxIdx] = bufferRx[i];
-      bufferTxIdx++;
-      txDateLenCount--;
-      if(txDateLenCount == 0){
-        txState = TRANSMIT;
-      }
-      break;
-    case TRANSMIT:
-      udp.beginPacket(serverIp, localPort);
-      udp.write(bufferTxUDP, txDateLen);
-      udp.endPacket();
-      txState = WAIT_DATA;
-      break;
+        break;
     }
 
   }
